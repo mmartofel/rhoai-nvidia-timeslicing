@@ -62,7 +62,7 @@ die() {
 echo ""
 echo -e "${BOLD}╔══════════════════════════════════════════════════════════════╗${NC}"
 echo -e "${BOLD}║   Gemma 270M deployment — RHOAI 3.4 / GPU Time-Slicing       ║${NC}"
-echo -e "${BOLD}║   ${GPU_REPLICAS} InferenceService replicas on a single T4 node          ║${NC}"
+echo -e "${BOLD}║   ${GPU_REPLICAS} InferenceService replicas on a single T4 node        ║${NC}"
 echo -e "${BOLD}║   Model storage: MinIO (cluster-local S3)                    ║${NC}"
 echo -e "${BOLD}╚══════════════════════════════════════════════════════════════╝${NC}"
 echo ""

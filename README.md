@@ -1,6 +1,6 @@
 # NVIDIA GPU Time-Slicing on RHOAI 3.4
 
-Demonstrates GPU time-slicing on OpenShift AI (RHOAI) 3.4 using a single NVIDIA T4 node. Time-slicing splits one physical GPU into 7 virtual GPUs, allowing 7 independent vLLM instances to run concurrently — each serving the `google/gemma-3-270m` model.
+Demonstrates GPU time-slicing on OpenShift AI (RHOAI) 3.4 using a single NVIDIA T4 node. Time-slicing splits one physical GPU into 7 virtual GPUs. 5 of them are used — running 5 independent vLLM instances concurrently, each serving `google/gemma-3-270m`.
 
 The project is visible in the RHOAI Dashboard, the inference endpoint is registered as a model server, and the model is available in the Gen AI Studio Playground.
 
@@ -15,21 +15,32 @@ Physical T4 GPU (16 GB VRAM)
     ┌────┴─────────────────────────────────┐
     │  7 × virtual nvidia.com/gpu          │
     │  (kernel-level time-multiplexed)     │
-    └────┬────┬────┬────┬────┬────┬────────┘
-         │    │    │    │    │    │    │
-      Pod 1  Pod 2  Pod 3  Pod 4  Pod 5  Pod 6  Pod 7
-      vLLM   vLLM   vLLM   vLLM   vLLM   vLLM   vLLM
-      Gemma  Gemma  Gemma  Gemma  Gemma  Gemma  Gemma
-         │    │    │    │    │    │    │
-         └────┴────┴─────────────────────┘
-                        │
-              KServe InferenceService
-              (load-balances across 7 pods)
-                        │
-                  OpenAI-compatible API
+    └────┬────┬────┬────┬────┬─────────────┘
+         │    │    │    │    │
+      Pod 1  Pod 2  Pod 3  Pod 4  Pod 5
+      vLLM   vLLM   vLLM   vLLM   vLLM
+      Gemma  Gemma  Gemma  Gemma  Gemma
+         │    │    │    │    │
+         └────┴────┴─────────┘
+                    │
+          KServe InferenceService
+          (load-balances across 5 pods)
+                    │
+            OpenAI-compatible API
 ```
 
-Each pod requests `nvidia.com/gpu: 1` (one virtual slice). With 7 virtual GPUs per node, all 7 pods land on the same physical T4. Conservative settings (`--gpu-memory-utilization 0.14`, `--max-model-len 1024`, `--no-enable-chunked-prefill`, `--enforce-eager`) are required to fit 7 instances on a T4 (Turing, 64 KB shared memory per block).
+Each pod requests `nvidia.com/gpu: 1` (one virtual slice). With 7 virtual GPUs per node, all 5 pods land on the same physical T4. 5 replicas are used instead of 7 — T4 memory pressure during simultaneous startup makes 7 unstable (see [Troubleshooting](#troubleshooting)).
+
+Conservative vLLM settings are required for T4 (Turing, 64 KB shared memory per block):
+
+| Flag | Value | Reason |
+|---|---|---|
+| `--gpu-memory-utilization` | `0.14` | 1/7 VRAM budget per pod — fits 5+ pods on 16 GB |
+| `--max-model-len` | `1024` | Keeps KV cache allocation small |
+| `--no-enable-chunked-prefill` | — | Triton chunked-prefill kernel exceeds T4 shared memory |
+| `--enforce-eager` | — | Disables CUDA graph capture (avoids profiling OOM) |
+| `--attention-backend FLEX_ATTENTION` | — | Triton attention kernel needs 80 KB; T4 limit is 64 KB |
+| `--num-gpu-blocks-override 200` | — | Bypasses memory profiling assertion that fails when sibling pods free GPU memory mid-profile |
 
 ## Requirements
 
@@ -67,8 +78,8 @@ After `./scripts/deploy.sh` completes:
 | Dashboard Location | What you see |
 |---|---|
 | **Projects** | `GPU Time-Slicing Demo` project (namespace: `time-slicing`) |
-| **Project → Models** | `gemma-270m` model server with 7 running replicas |
-| **Gen AI Studio → Playground** | `google/gemma-3-270m` model available for chat |
+| **Project → Models** | `gemma-270m` model server with 5 running replicas |
+| **Gen AI Studio → Playground** | `google/gemma-3-270m` model available |
 
 ## Management
 
@@ -103,6 +114,10 @@ oc delete configmap time-slicing-config -n nvidia-gpu-operator
 
 ## API usage
 
+The model is served under the InferenceService name `gemma-270m` (set via `--served-model-name={{.Name}}`), **not** the HuggingFace ID `google/gemma-3-270m`. Use `"model": "gemma-270m"` in all API calls.
+
+`google/gemma-3-270m` is a **base completion model** — it has no chat template. `/v1/chat/completions` will return a `400 BadRequestError`. Use `/v1/completions` instead. If you need chat, switch to the instruct variant `google/gemma-3-270m-it`.
+
 ```bash
 # Get the endpoint URL
 ENDPOINT=$(oc get inferenceservice gemma-270m -n time-slicing -o jsonpath='{.status.url}')
@@ -114,19 +129,10 @@ curl -k ${ENDPOINT}/v1/models
 curl -k ${ENDPOINT}/v1/completions \
   -H "Content-Type: application/json" \
   -d '{
-    "model": "google/gemma-3-270m",
+    "model": "gemma-270m",
     "prompt": "Explain GPU time-slicing in one sentence.",
     "max_tokens": 128,
     "temperature": 0.7
-  }'
-
-# Chat completion
-curl -k ${ENDPOINT}/v1/chat/completions \
-  -H "Content-Type: application/json" \
-  -d '{
-    "model": "google/gemma-3-270m",
-    "messages": [{"role": "user", "content": "What is OpenShift AI?"}],
-    "max_tokens": 128
   }'
 ```
 
@@ -145,12 +151,12 @@ rhoai-nvidia-timeslicing/
 │   ├── 01-namespace.yaml          # Namespace: time-slicing (RHOAI-visible)
 │   ├── 02-time-slicing-config.yaml # GPU Operator ConfigMap (7 replicas/GPU)
 │   ├── 03-minio.yaml              # MinIO S3 in rhoai-model-registries
-│   ├── 04-hf-secret.yaml.template # HuggingFace token secret
-│   ├── 05-s3-connection.yaml.template # S3 credentials for model loading
+│   ├── 04-hf-secret.yaml.template # HuggingFace token secret (name: hf-token)
+│   ├── 05-s3-connection.yaml.template # MinIO connection (uri type, no managed label)
 │   ├── 06-model-transfer-job.yaml.template # Job: HF → MinIO transfer
 │   ├── 07-accelerator-profile.yaml # NVIDIA T4 AcceleratorProfile
-│   ├── 08-serving-runtime.yaml    # (unused) Custom vLLM ServingRuntime
-│   ├── 09-inference-service.yaml  # KServe InferenceService (7 replicas)
+│   ├── 08-serving-runtime.yaml    # Reference only — deploy.sh uses RHOAI template
+│   ├── 09-inference-service.yaml  # KServe InferenceService (5 replicas)
 │   ├── 10-kserve-model-sa.yaml.template # storage-config Secret + SA for KServe
 │   ├── 11-playground.yaml.template # LlamaStackDistribution (Playground UI)
 │   └── 12-test-inference.sh       # Inference smoke test
@@ -164,6 +170,31 @@ rhoai-nvidia-timeslicing/
 
 ## Troubleshooting
 
+**storage-initializer fails: `S3 authentication failed` / `Unable to locate credentials`**
+
+The ODH controller overwrote `storage-config`. This happens if `s3-data-connection` has `opendatahub.io/managed: "true"` — ODH sees a `uri`-type connection and sets `"type": ""` in `storage-config`. Fix immediately:
+
+```bash
+# Verify the damage
+oc get secret storage-config -n time-slicing \
+  -o jsonpath='{.data.s3-data-connection}' | base64 -d
+
+# Recreate storage-config with correct type
+oc delete secret storage-config -n time-slicing --ignore-not-found
+oc create secret generic storage-config -n time-slicing \
+  --from-literal=s3-data-connection='{
+    "access_key_id":"minio",
+    "bucket":"gemma-models",
+    "endpoint_url":"http://minio.rhoai-model-registries.svc.cluster.local:9000",
+    "region":"us-east-1",
+    "secret_access_key":"minio123",
+    "type":"s3"
+  }'
+
+# Restart pods to pick up the new secret
+oc rollout restart deployment/gemma-270m-predictor -n time-slicing
+```
+
 **Pods stuck in Pending:**
 ```bash
 oc describe pod -n time-slicing -l serving.kserve.io/inferenceservice=gemma-270m | grep -A10 Events
@@ -174,7 +205,7 @@ oc describe pod -n time-slicing -l serving.kserve.io/inferenceservice=gemma-270m
 ```bash
 oc describe inferenceservice gemma-270m -n time-slicing
 oc get pods -n time-slicing -o wide
-# Check if storage-initializer init container can reach MinIO
+# Check storage-initializer logs
 oc logs -n time-slicing <pod-name> -c storage-initializer
 ```
 
@@ -197,3 +228,15 @@ oc get nodes -l nvidia.com/gpu.present=true \
 # If GPU column shows "1" instead of "7", wait 60-90s for device plugin to restart
 oc rollout status daemonset/nvidia-device-plugin-daemonset -n nvidia-gpu-operator
 ```
+
+**vLLM pods crash with `OutOfResources: shared memory`:**
+
+T4 Triton attention kernel requires 80 KB shared memory; T4 hardware limit is 64 KB. Ensure the ServingRuntime has `--attention-backend FLEX_ATTENTION`. Check:
+```bash
+oc get servingruntime vllm-cuda-runtime -n time-slicing \
+  -o jsonpath='{.spec.containers[0].args}'
+```
+
+**vLLM pods crash with `AssertionError: Error in memory profiling`:**
+
+Time-sliced GPUs can violate vLLM's memory profiling assertion (another pod freeing memory looks like a gain). Ensure the ServingRuntime has `--num-gpu-blocks-override 200`.
