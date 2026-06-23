@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this repo is
 
-Scripts and manifests for demonstrating NVIDIA GPU time-slicing on RHOAI 3.4 on the `zenek-hqxqx` OCP cluster (us-east-2). Time-slicing splits each physical T4 GPU into 7 virtual GPUs, allowing 7 independent vLLM instances to run concurrently. Each instance serves `google/gemma-3-270m` and is deployed as a KServe `InferenceService` replica.
+Scripts and manifests for demonstrating NVIDIA GPU time-slicing on RHOAI 3.4 on the `zenek-hqxqx` OCP cluster (us-east-2). Time-slicing splits each physical T4 GPU into 7 virtual GPUs. 5 vLLM instances run concurrently (not 7 — see vLLM T4 constraints below). Each instance serves `google/gemma-3-270m` and is deployed as a KServe `InferenceService` replica.
 
 The deployment is fully integrated with RHOAI Dashboard: the `time-slicing` namespace appears as a project, the model server is visible in the project's Models view, and the model is available in Gen AI Studio Playground via `LlamaStackDistribution`.
 
@@ -52,6 +52,16 @@ cp config/config.env.example config/config.env
 **Model storage**: `google/gemma-3-270m` is downloaded from HuggingFace to MinIO once (via `06-model-transfer-job.yaml.template`). The InferenceService reads from `s3://gemma-models/gemma-3-270m/`. This eliminates HF API dependency at pod startup.
 
 **S3 credentials via storage-config**: The InferenceService uses `spec.predictor.model.storage.key: s3-data-connection` (no `storageUri`). KServe reads the `storage-config` secret (key `s3-data-connection`, JSON blob with MinIO credentials) and injects it as a single `STORAGE_CONFIG` env var into the storage-initializer. This avoids the CredentialBuilder path (SA annotation → individual `secretKeyRef` env vars) that causes `spec.initContainers[0].env[2].valueFrom: Invalid value` conflicts under KServe's `reinvocationPolicy: IfNeeded` when the ODH pod webhook also modifies the pod.
+
+**ODH controller and storage-config**: The `s3-data-connection` secret must NOT have `opendatahub.io/managed: "true"`. If it does, the ODH controller sees the `uri`-type connection, creates/updates `storage-config` with `"type": ""`, and KServe's pod-mutator rejects it with `storage type must be one of [s3, hdfs, webhdfs]`. Keeping `opendatahub.io/dashboard: "true"` (without `managed`) is sufficient for Dashboard visibility. The `storage-config` secret itself must also not have `managed: "true"` — if ODH adds that label, it will keep reconciling `"type": ""` back. When ODH deletes or corrupts `storage-config`, recreate it manually: `oc create secret generic storage-config -n time-slicing --from-literal=s3-data-connection='{"access_key_id":"minio","bucket":"gemma-models","endpoint_url":"http://minio.rhoai-model-registries.svc.cluster.local:9000","region":"us-east-1","secret_access_key":"minio123","type":"s3"}'`
+
+**`connection-isvc` webhook fires on CREATE only**: The RHOAI webhook at `/platform-connection-isvc` reads `opendatahub.io/connections` annotation on IS CREATE and sets `storageUri`. It does not fire on UPDATE. This means `spec.predictor.model.storage.key` can be safely patched after IS creation — the webhook won't strip it. deploy.sh patches `storage.key` immediately after `oc apply -f 09-inference-service.yaml`.
+
+**Gemma 3 base model has no chat template**: `google/gemma-3-270m` is a base completion model. `/v1/chat/completions` returns `BadRequestError: default chat template is no longer allowed`. Use `/v1/completions` with `"model": "gemma-270m"` (the InferenceService name, not the HuggingFace ID — set via `--served-model-name={{.Name}}`). The instruct variant `google/gemma-3-270m-it` supports chat completions.
+
+**`--attention-backend FLEX_ATTENTION`**: T4 Triton attention kernel (`kernel_unified_attention_2d`) requires 80 KB shared memory; T4 hardware limit is 64 KB. This causes `triton.runtime.errors.OutOfResources` during INFERENCE (not just startup). `--enforce-eager` does not prevent this — it only disables CUDA graphs. Must use `--attention-backend FLEX_ATTENTION` CLI flag (not env var `VLLM_ATTENTION_BACKEND` which this vLLM build does not recognize).
+
+**`--num-gpu-blocks-override 200`**: vLLM v1 memory profiling asserts `init_snapshot.free_memory >= current_free_memory`. On time-sliced GPUs, a sibling pod freeing memory mid-profiling violates this assertion. Bypass with `--num-gpu-blocks-override 200` which skips profiling entirely and allocates exactly 200 KV blocks (≈ 528 tokens of KV cache capacity).
 
 **RHOAI Dashboard visibility**: Namespace labelled `opendatahub.io/dashboard: "true"` + `modelmesh-enabled: "false"`. InferenceService labelled `opendatahub.io/dashboard: "true"`. LlamaStackDistribution for Playground.
 

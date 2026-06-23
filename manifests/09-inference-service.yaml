@@ -6,11 +6,17 @@
 # With 7 virtual GPUs per node (from time-slicing-config), the scheduler
 # places all 7 pods on the same physical T4 node.
 #
-# S3 credentials use storage.key → storage-config secret (JSON blob).
-# KServe injects STORAGE_CONFIG env var into the storage-initializer.
-# This avoids the CredentialBuilder path (SA annotation → secretKeyRef env
-# vars) that conflicts with the ODH pod webhook under reinvocationPolicy:
-# IfNeeded and causes the env[2] value+valueFrom admission error.
+# storageUri is set by the connection-isvc webhook (RHODS operator) when the
+# connection secret uses connection-type-protocol: uri and has a URI key.
+# The webhook reads the URI value → sets storageUri on the IS spec.
+# The ODH pod webhook then injects the secret's AWS_* keys as direct value:
+# env vars into every pod container, giving the storage-initializer MinIO
+# credentials without secretKeyRef (avoiding the env[2] conflict under
+# reinvocationPolicy: IfNeeded).
+# Note: storage.key was tried first (KServe native) but the connection-isvc
+# webhook strips it regardless of whether connections annotation is present.
+# storageUri alone is also stripped when the connection type is s3 (broken
+# path in RHOAI 3.4). Only connection-type-protocol: uri reliably sets it.
 #
 # The label opendatahub.io/dashboard: "true" makes this InferenceService
 # visible in the RHOAI Dashboard under the time-slicing project.
@@ -33,16 +39,13 @@ metadata:
     opendatahub.io/connection-path: gemma-3-270m
 spec:
   predictor:
-    minReplicas: 7
-    maxReplicas: 7
-    serviceAccountName: s3-data-connection-sa
+    minReplicas: 5
+    maxReplicas: 5
     model:
       modelFormat:
         name: vLLM
       runtime: vllm-cuda-runtime
-      storage:
-        key: s3-data-connection
-        path: gemma-3-270m
+      storageUri: s3://gemma-models/gemma-3-270m
       resources:
         requests:
           cpu: "100m"

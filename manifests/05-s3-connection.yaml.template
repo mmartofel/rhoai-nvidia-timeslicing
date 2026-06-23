@@ -1,12 +1,14 @@
 # =============================================================================
-# S3 data connection — RHOAI-native S3 connection secret for MinIO.
+# S3 data connection — RHOAI-native connection secret for MinIO.
 #
-# Labelled as an opendatahub.io data connection so the RHOAI Dashboard shows
-# it in the project's Data Connections panel.
+# Uses connection-type-protocol: uri so the connection-isvc webhook correctly
+# sets storageUri on the InferenceService (the 's3' type path is broken in
+# RHOAI 3.4 — the webhook strips storage fields without setting storageUri).
 #
-# This secret is also listed in s3-data-connection-sa (ServiceAccount) and
-# its key name matches the storage-config secret's key (s3-data-connection)
-# that KServe uses for the storage.key credential mechanism.
+# The URI key provides the full s3:// path; the AWS_* keys remain so the ODH
+# pod webhook injects MinIO credentials into pods as direct value: env vars
+# (no secretKeyRef → avoids the env[2] value+valueFrom conflict under
+# reinvocationPolicy: IfNeeded).
 # =============================================================================
 apiVersion: v1
 kind: Secret
@@ -15,13 +17,14 @@ metadata:
   namespace: ${NAMESPACE}
   labels:
     opendatahub.io/dashboard: "true"
-    opendatahub.io/managed: "true"
     app: gemma-270m
   annotations:
-    opendatahub.io/connection-type: s3
+    opendatahub.io/connection-type-protocol: uri
+    opendatahub.io/connection-type-ref: uri-v1
     openshift.io/display-name: "MinIO (Gemma)"
 type: Opaque
 stringData:
+  URI: "s3://${MINIO_BUCKET}/${MODEL_S3_PATH}"
   AWS_ACCESS_KEY_ID: "${MINIO_ACCESS_KEY}"
   AWS_SECRET_ACCESS_KEY: "${MINIO_SECRET_KEY}"
   AWS_S3_ENDPOINT: "${MINIO_ENDPOINT}"

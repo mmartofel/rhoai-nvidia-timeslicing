@@ -1,70 +1,67 @@
 # =============================================================================
-# ServingRuntime — vLLM for time-sliced T4
+# ServingRuntime — vLLM NVIDIA GPU (RHOAI 3.4 official template)
 #
-# Custom serving runtime using vllm/vllm-openai. Conservative memory settings
-# (--gpu-memory-utilization 0.10, --max-model-len 1024) allow 7 independent
-# vLLM instances to coexist on a single time-sliced T4 GPU without OOM.
+# NOT applied directly — deploy.sh processes vllm-cuda-runtime-template from
+# redhat-ods-applications and patches it with T4-specific args. This file
+# documents the resulting live state for reference.
 #
-# The storage-initializer init container (injected by KServe) downloads the
-# model from MinIO to /mnt/models before this container starts.
+# T4-specific args added by deploy.sh patch:
+#   --gpu-memory-utilization 0.14   1/7 of VRAM so all 5 pods fit (see config.env)
+#   --max-model-len 1024            keeps KV cache small on 16GB shared GPU
+#   --no-enable-chunked-prefill     required for T4 (Triton kernel limit)
+#   --enforce-eager                 disables CUDA graph capture (avoids profiling OOM)
+#   --attention-backend FLEX_ATTENTION  T4 Triton attn kernel needs 80KB shared mem;
+#                                   T4 limit is 64KB → must use FLEX_ATTENTION
+#   --num-gpu-blocks-override 200   bypasses vLLM memory profiling assertion that
+#                                   fails on time-sliced GPUs when a sibling pod
+#                                   frees memory mid-profiling
 # =============================================================================
 apiVersion: serving.kserve.io/v1alpha1
 kind: ServingRuntime
 metadata:
-  name: vllm-timeslicing-runtime
+  name: vllm-cuda-runtime
   namespace: time-slicing
   labels:
-    app: gemma-270m
     opendatahub.io/dashboard: "true"
   annotations:
-    openshift.io/display-name: "vLLM (time-sliced T4)"
+    opendatahub.io/template-name: vllm-cuda-runtime-template
+    opendatahub.io/template-display-name: vLLM NVIDIA GPU ServingRuntime for KServe
+    opendatahub.io/recommended-accelerators: '["nvidia.com/gpu"]'
+    opendatahub.io/runtime-version: v0.18.0
+    openshift.io/display-name: vLLM NVIDIA GPU ServingRuntime for KServe
 spec:
+  annotations:
+    opendatahub.io/kserve-runtime: vllm
+    prometheus.io/path: /metrics
+    prometheus.io/port: "8080"
+  multiModel: false
   supportedModelFormats:
     - name: vLLM
-      version: "1"
       autoSelect: true
-  multiModel: false
   containers:
     - name: kserve-container
-      image: vllm/vllm-openai:latest
+      image: registry.redhat.io/rhaii/vllm-cuda-rhel9@sha256:ad06abf3bb5235ebb5b2df84cd1b9fd09e823f0ff2eebfc82bb4590275ccfe0b
       command:
         - python
         - -m
         - vllm.entrypoints.openai.api_server
       args:
-        - --model
-        - /mnt/models
-        - --served-model-name
-        - google/gemma-3-270m
+        - --port=8080
+        - --model=/mnt/models
+        - --served-model-name={{.Name}}
         - --gpu-memory-utilization
-        - "0.10"
+        - "0.14"
         - --max-model-len
         - "1024"
-        - --host
-        - "0.0.0.0"
-        - --port
-        - "8080"
-      ports:
-        - name: h2c
-          containerPort: 8080
-          protocol: TCP
+        - --no-enable-chunked-prefill
+        - --enforce-eager
+        - --attention-backend
+        - FLEX_ATTENTION
+        - --num-gpu-blocks-override
+        - "200"
       env:
-        - name: HOME
-          value: /tmp
         - name: HF_HOME
-          value: /tmp
-        - name: TORCHINDUCTOR_CACHE_DIR
-          value: /tmp/torchinductor
-      readinessProbe:
-        httpGet:
-          path: /health
-          port: 8080
-        initialDelaySeconds: 30
-        periodSeconds: 10
-        failureThreshold: 12
-      resources:
-        requests:
-          cpu: "100m"
-          memory: "2Gi"
-        limits:
-          nvidia.com/gpu: "1"
+          value: /tmp/hf_home
+      ports:
+        - containerPort: 8080
+          protocol: TCP

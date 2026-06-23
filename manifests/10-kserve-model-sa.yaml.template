@@ -17,7 +17,7 @@ metadata:
   name: storage-config
   namespace: ${NAMESPACE}
   labels:
-    opendatahub.io/managed: "true"
+    app: gemma-270m
 type: Opaque
 stringData:
   s3-data-connection: |

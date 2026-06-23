@@ -76,7 +76,7 @@ else
 fi
 
 # --- Secrets ---
-for SECRET in storage-config s3-data-connection huggingface-token; do
+for SECRET in storage-config s3-data-connection hf-token; do
     log_info "Deleting Secret '${SECRET}'..."
     if oc get secret "${SECRET}" -n "${NAMESPACE}" &>/dev/null; then
         oc delete secret "${SECRET}" -n "${NAMESPACE}"

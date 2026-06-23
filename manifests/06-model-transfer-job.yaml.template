@@ -112,7 +112,7 @@ spec:
               value: /workspace
           envFrom:
             - secretRef:
-                name: huggingface-token
+                name: hf-token
             - secretRef:
                 name: s3-data-connection
           volumeMounts:

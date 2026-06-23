@@ -12,7 +12,7 @@ set -euo pipefail
 #   4. Create secrets (HF token, S3 credentials, KServe SA)
 #   5. Apply AcceleratorProfile (NVIDIA T4)
 #   6. Run model transfer Job (google/gemma-3-270m → MinIO)
-#   7. Deploy ServingRuntime + InferenceService (7 replicas, 1 GPU each)
+#   7. Deploy ServingRuntime + InferenceService (5 replicas, 1 GPU each)
 #   8. Deploy Playground (LlamaStackDistribution for RHOAI Gen AI Studio)
 #   9. Run inference smoke test
 #
@@ -22,6 +22,12 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 source "${REPO_DIR}/config/config.env"
+
+# Defaults for variables that may be absent in older config.env files
+: "${GPU_REPLICAS:=5}"
+: "${GPU_MEMORY_UTILIZATION:=0.14}"
+: "${MAX_MODEL_LEN:=1024}"
+: "${NUM_GPU_BLOCKS_OVERRIDE:=200}"
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -56,7 +62,7 @@ die() {
 echo ""
 echo -e "${BOLD}╔══════════════════════════════════════════════════════════════╗${NC}"
 echo -e "${BOLD}║   Gemma 270M deployment — RHOAI 3.4 / GPU Time-Slicing       ║${NC}"
-echo -e "${BOLD}║   7 InferenceService replicas on a single T4 node            ║${NC}"
+echo -e "${BOLD}║   ${GPU_REPLICAS} InferenceService replicas on a single T4 node          ║${NC}"
 echo -e "${BOLD}║   Model storage: MinIO (cluster-local S3)                    ║${NC}"
 echo -e "${BOLD}╚══════════════════════════════════════════════════════════════╝${NC}"
 echo ""
@@ -94,7 +100,7 @@ else
 fi
 
 export HF_TOKEN NAMESPACE MINIO_ACCESS_KEY MINIO_SECRET_KEY MINIO_ENDPOINT MINIO_BUCKET \
-       MODEL_NAME MODEL_S3_PATH GPU_REPLICAS
+       MODEL_NAME MODEL_S3_PATH GPU_REPLICAS GPU_MEMORY_UTILIZATION MAX_MODEL_LEN NUM_GPU_BLOCKS_OVERRIDE
 
 # =============================================================================
 # Step 2: Namespace
@@ -163,9 +169,9 @@ fi
 
 envsubst '${NAMESPACE} ${HF_TOKEN}' \
     < "${REPO_DIR}/manifests/04-hf-secret.yaml.template" | oc apply -f -
-log_success "Secret 'huggingface-token' applied"
+log_success "Secret 'hf-token' applied"
 
-envsubst '${NAMESPACE} ${MINIO_ACCESS_KEY} ${MINIO_SECRET_KEY} ${MINIO_ENDPOINT} ${MINIO_BUCKET}' \
+envsubst '${NAMESPACE} ${MINIO_ACCESS_KEY} ${MINIO_SECRET_KEY} ${MINIO_ENDPOINT} ${MINIO_BUCKET} ${MODEL_S3_PATH}' \
     < "${REPO_DIR}/manifests/05-s3-connection.yaml.template" | oc apply -f -
 log_success "Secret 's3-data-connection' applied"
 
@@ -237,7 +243,7 @@ fi
 # =============================================================================
 # Step 7: ServingRuntime + InferenceService
 # =============================================================================
-log_step "Step 7/9: Deploying ServingRuntime and InferenceService (7 replicas)"
+log_step "Step 7/9: Deploying ServingRuntime and InferenceService (${GPU_REPLICAS} replicas)"
 
 oc delete servingruntime vllm-timeslicing-runtime -n "${NAMESPACE}" \
     --ignore-not-found &>/dev/null && \
@@ -266,12 +272,23 @@ oc patch servingruntime vllm-cuda-runtime -n "${NAMESPACE}" \
       {"op":"add","path":"/spec/containers/0/args/-","value":"--max-model-len"},
       {"op":"add","path":"/spec/containers/0/args/-","value":"'"${MAX_MODEL_LEN}"'"},
       {"op":"add","path":"/spec/containers/0/args/-","value":"--no-enable-chunked-prefill"},
-      {"op":"add","path":"/spec/containers/0/args/-","value":"--enforce-eager"}
+      {"op":"add","path":"/spec/containers/0/args/-","value":"--enforce-eager"},
+      {"op":"add","path":"/spec/containers/0/args/-","value":"--attention-backend"},
+      {"op":"add","path":"/spec/containers/0/args/-","value":"FLEX_ATTENTION"},
+      {"op":"add","path":"/spec/containers/0/args/-","value":"--num-gpu-blocks-override"},
+      {"op":"add","path":"/spec/containers/0/args/-","value":"'"${NUM_GPU_BLOCKS_OVERRIDE}"'"}
     ]' &>/dev/null
-log_success "ServingRuntime patched: --gpu-memory-utilization ${GPU_MEMORY_UTILIZATION} --max-model-len ${MAX_MODEL_LEN} --no-enable-chunked-prefill --enforce-eager"
+log_success "ServingRuntime patched: --gpu-memory-utilization ${GPU_MEMORY_UTILIZATION} --max-model-len ${MAX_MODEL_LEN} --no-enable-chunked-prefill --enforce-eager --attention-backend FLEX_ATTENTION --num-gpu-blocks-override ${NUM_GPU_BLOCKS_OVERRIDE}"
 
 oc apply -f "${REPO_DIR}/manifests/09-inference-service.yaml"
 log_success "InferenceService 'gemma-270m' applied"
+
+# The connection-isvc webhook fires only on CREATE, not UPDATE — safe to patch storage.key
+# after creation. KServe's pod-mutator reads storage-config secret when this key is set.
+oc patch inferenceservice gemma-270m -n "${NAMESPACE}" \
+    --type=merge \
+    -p '{"spec":{"predictor":{"model":{"storage":{"key":"s3-data-connection"}}}}}' &>/dev/null
+log_success "InferenceService patched: storage.key=s3-data-connection (KServe S3 credentials)"
 
 echo ""
 log_info "Deployment configuration:"
@@ -360,7 +377,7 @@ echo -e "${BOLD}╚════════════════════�
 echo ""
 echo -e "${BOLD}RHOAI Dashboard:${NC}"
 echo "  → Projects → time-slicing (GPU Time-Slicing Demo)"
-echo "  → Models → gemma-270m (7 running replicas)"
+echo "  → Models → gemma-270m (${GPU_REPLICAS} running replicas)"
 echo "  → Gen AI Studio → Playground → ${MODEL_NAME}"
 echo ""
 if [ -n "${ENDPOINT_URL}" ]; then

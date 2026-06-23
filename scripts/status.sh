@@ -2,7 +2,7 @@
 set -euo pipefail
 
 # =============================================================================
-# Status check for Gemma 270M deployment (7× time-sliced T4) on RHOAI 3.4
+# Status check for Gemma 270M deployment (5× time-sliced T4) on RHOAI 3.4
 # Usage: ./scripts/status.sh [--watch]
 # =============================================================================
 
@@ -65,7 +65,7 @@ oc get pods -n "${NAMESPACE}" -o wide --no-headers 2>/dev/null | \
          {printf "%-50s %-12s %-8s %-40s\n",$1,$4,$2,$7}'
 
 echo ""
-log_info "Time-slicing validation (all 7 pods should land on the same GPU node):"
+log_info "Time-slicing validation (all ${GPU_REPLICAS} pods should land on the same GPU node):"
 
 NODES_LIST=$(oc get pods -n "${NAMESPACE}" -o wide --no-headers 2>/dev/null | \
     grep -v "Completed\|Evicted\|Error" | awk '{print $7}' | sort || true)
