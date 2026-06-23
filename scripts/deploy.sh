@@ -264,6 +264,9 @@ oc annotate servingruntime vllm-cuda-runtime -n "${NAMESPACE}" \
     --overwrite &>/dev/null
 log_success "ServingRuntime RHOAI Dashboard annotations set"
 
+oc apply -f "${REPO_DIR}/manifests/13-chat-template.yaml"
+log_success "ConfigMap 'gemma-chat-template' applied (provides chat template for base model)"
+
 oc patch servingruntime vllm-cuda-runtime -n "${NAMESPACE}" \
     --type=json \
     -p '[
@@ -276,9 +279,13 @@ oc patch servingruntime vllm-cuda-runtime -n "${NAMESPACE}" \
       {"op":"add","path":"/spec/containers/0/args/-","value":"--attention-backend"},
       {"op":"add","path":"/spec/containers/0/args/-","value":"FLEX_ATTENTION"},
       {"op":"add","path":"/spec/containers/0/args/-","value":"--num-gpu-blocks-override"},
-      {"op":"add","path":"/spec/containers/0/args/-","value":"'"${NUM_GPU_BLOCKS_OVERRIDE}"'"}
+      {"op":"add","path":"/spec/containers/0/args/-","value":"'"${NUM_GPU_BLOCKS_OVERRIDE}"'"},
+      {"op":"add","path":"/spec/containers/0/args/-","value":"--chat-template"},
+      {"op":"add","path":"/spec/containers/0/args/-","value":"/tmp/chat-template/chat.jinja"},
+      {"op":"add","path":"/spec/containers/0/volumeMounts","value":[{"name":"chat-template","mountPath":"/tmp/chat-template","readOnly":true}]},
+      {"op":"add","path":"/spec/volumes","value":[{"name":"chat-template","configMap":{"name":"gemma-chat-template"}}]}
     ]' &>/dev/null
-log_success "ServingRuntime patched: --gpu-memory-utilization ${GPU_MEMORY_UTILIZATION} --max-model-len ${MAX_MODEL_LEN} --no-enable-chunked-prefill --enforce-eager --attention-backend FLEX_ATTENTION --num-gpu-blocks-override ${NUM_GPU_BLOCKS_OVERRIDE}"
+log_success "ServingRuntime patched: T4 flags + --chat-template /tmp/chat-template/chat.jinja"
 
 oc apply -f "${REPO_DIR}/manifests/09-inference-service.yaml"
 log_success "InferenceService 'gemma-270m' applied"

@@ -116,7 +116,7 @@ oc delete configmap time-slicing-config -n nvidia-gpu-operator
 
 The model is served under the InferenceService name `gemma-270m` (set via `--served-model-name={{.Name}}`), **not** the HuggingFace ID `google/gemma-3-270m`. Use `"model": "gemma-270m"` in all API calls.
 
-`google/gemma-3-270m` is a **base completion model** — it has no chat template. `/v1/chat/completions` will return a `400 BadRequestError`. Use `/v1/completions` instead. If you need chat, switch to the instruct variant `google/gemma-3-270m-it`.
+`google/gemma-3-270m` is a **base completion model** with no built-in chat template. A minimal Gemma-format template is provided in `manifests/13-chat-template.yaml` and mounted into vLLM automatically by `deploy.sh`. This makes `/v1/chat/completions` and the Playground work, though response quality is limited (base model, not instruction-tuned). For proper assistant-style chat, switch to `google/gemma-3-270m-it`.
 
 ```bash
 # Get the endpoint URL
@@ -159,7 +159,8 @@ rhoai-nvidia-timeslicing/
 │   ├── 09-inference-service.yaml  # KServe InferenceService (5 replicas)
 │   ├── 10-kserve-model-sa.yaml.template # storage-config Secret + SA for KServe
 │   ├── 11-playground.yaml.template # LlamaStackDistribution (Playground UI)
-│   └── 12-test-inference.sh       # Inference smoke test
+│   ├── 12-test-inference.sh       # Inference smoke test
+│   └── 13-chat-template.yaml      # Gemma chat template ConfigMap (base model workaround)
 └── scripts/
     ├── setup.sh                   # Configure GPU time-slicing (run once)
     ├── deploy.sh                  # Deploy Gemma + Playground (9 steps)

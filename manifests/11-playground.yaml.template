@@ -133,8 +133,8 @@ data:
         model_id: gemma-270m
         model_type: llm
         metadata:
-          description: Google Gemma 3 270M — 7 instances on a single T4 via GPU time-slicing (RHOAI 3.4)
-          display_name: Gemma 3 270M (7× time-sliced T4)
+          description: Google Gemma 3 270M — 5 instances on a single T4 via GPU time-slicing (RHOAI 3.4)
+          display_name: Gemma 3 270M (5× time-sliced T4)
       shields: []
       vector_stores: []
       datasets: []

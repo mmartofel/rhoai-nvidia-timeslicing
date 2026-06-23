@@ -1,0 +1,25 @@
+# =============================================================================
+# Chat template ConfigMap for google/gemma-3-270m (base model)
+#
+# google/gemma-3-270m is a base completion model with no built-in chat template.
+# vLLM rejects /v1/chat/completions without one (transformers v4.44+).
+# This ConfigMap provides a minimal Gemma-format template so the Playground
+# (LlamaStack) can call the chat endpoint without a 400 BadRequestError.
+#
+# Note: responses will not be high-quality (base model, not instruction-tuned).
+# For proper chat, switch to google/gemma-3-270m-it.
+# =============================================================================
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: gemma-chat-template
+  namespace: time-slicing
+  labels:
+    app: gemma-270m
+data:
+  chat.jinja: |
+    {{ bos_token }}{% for message in messages %}{% if message['role'] == 'user' %}<start_of_turn>user
+    {{ message['content'] }}<end_of_turn>
+    <start_of_turn>model
+    {% elif message['role'] == 'assistant' %}{{ message['content'] }}<end_of_turn>
+    {% endif %}{% endfor %}{% if add_generation_prompt %}{% endif %}

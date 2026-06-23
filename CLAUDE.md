@@ -60,7 +60,7 @@ cp config/config.env.example config/config.env
 
 **Gemma 3 does not support float16**: Adding `--dtype float16` causes a hard validation error (`gemma3_text does not support float16, use bfloat16 or float32`). Do not add this flag. vLLM auto-selects float32 on T4 as a bfloat16 fallback.
 
-**Gemma 3 base model has no chat template**: `google/gemma-3-270m` is a base completion model. `/v1/chat/completions` returns `400 BadRequestError: default chat template is no longer allowed`. Use `/v1/completions` only. The instruct variant `google/gemma-3-270m-it` supports chat. This is a model limitation, not a deployment bug.
+**Gemma 3 base model chat template**: `google/gemma-3-270m` has no built-in chat template (transformers v4.44+). Without one, `/v1/chat/completions` returns `400 BadRequestError`. A minimal Gemma-format template is provided in `manifests/13-chat-template.yaml` (ConfigMap `gemma-chat-template`), mounted into the ServingRuntime at `/tmp/chat-template/chat.jinja` and activated via `--chat-template`. This makes the Playground (LlamaStack) work. Response quality is limited — the base model continues text rather than answering as an assistant. For proper chat, switch to `google/gemma-3-270m-it`.
 
 **Model name in API calls**: The model is served as `gemma-270m` (the InferenceService name), set via `--served-model-name={{.Name}}` in the ServingRuntime. Always use `"model": "gemma-270m"` in API calls — not the HuggingFace ID `google/gemma-3-270m`.
 
