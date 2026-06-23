@@ -3,11 +3,11 @@
 #
 # Applied to the nvidia-gpu-operator namespace. The ClusterPolicy
 # gpu-cluster-policy is then patched (by setup.sh) to reference this ConfigMap,
-# which causes the device plugin to advertise 7 virtual nvidia.com/gpu resources
+# which causes the device plugin to advertise 5 virtual nvidia.com/gpu resources
 # per physical GPU.
 #
 # migStrategy: none — T4 GPUs do not support MIG (A100/H100 only).
-# replicas: 7 — each physical GPU appears as 7 schedulable GPU resources.
+# replicas: 5 — each physical GPU appears as 5 schedulable GPU resources.
 # =============================================================================
 apiVersion: v1
 kind: ConfigMap
@@ -25,4 +25,4 @@ data:
         failRequestsGreaterThanOne: false
         resources:
         - name: nvidia.com/gpu
-          replicas: 7
+          replicas: 5

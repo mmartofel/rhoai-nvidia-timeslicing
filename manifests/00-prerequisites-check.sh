@@ -25,8 +25,8 @@ log_error()   { echo -e "${RED}[FAIL]${NC} $*"; ERRORS=$((ERRORS + 1)); }
 
 echo ""
 echo -e "${BOLD}══════════════════════════════════════════════════════════════${NC}"
-echo -e "${BOLD}  Prerequisites check: Gemma 270M on RHOAI 3.4               ${NC}"
-echo -e "${BOLD}  GPU time-slicing — zenek-hqxqx cluster                     ${NC}"
+echo -e "${BOLD}  Prerequisites check: Gemma 270M on RHOAI 3.4                ${NC}"
+echo -e "${BOLD}  GPU time-slicing — zenek-hqxqx cluster                      ${NC}"
 echo -e "${BOLD}══════════════════════════════════════════════════════════════${NC}"
 echo ""
 
@@ -69,7 +69,7 @@ else
     else
         DSC_NAME=$(oc get datasciencecluster --all-namespaces --no-headers 2>/dev/null | awk '{print $2}' | head -1)
         DSC_NS=$(oc get datasciencecluster --all-namespaces --no-headers 2>/dev/null | awk '{print $1}' | head -1)
-        RHOAI_VERSION=$(oc get csv -n redhat-ods-operator --no-headers 2>/dev/null | grep -i "rhods\|rhoai\|opendatahub" | awk '{print $7}' | head -1 || echo "unknown")
+        RHOAI_VERSION=$(oc get csv -n redhat-ods-operator --no-headers 2>/dev/null | grep -i "rhods\|rhoai\|opendatahub" | awk '{print $5}' | head -1 || echo "unknown")
         log_success "DataScienceCluster '${DSC_NAME}' (ns: ${DSC_NS}) — RHOAI version: ${RHOAI_VERSION}"
     fi
 fi
@@ -101,7 +101,7 @@ fi
 log_info "Checking GPU time-slicing (nvidia.com/gpu allocatable)..."
 GPU_COUNT=$(oc get nodes -l 'nvidia.com/gpu.present=true' \
     -o jsonpath='{.items[0].status.allocatable.nvidia\.com/gpu}' 2>/dev/null || echo "0")
-if [ "${GPU_COUNT}" -eq 7 ] 2>/dev/null; then
+if [ "${GPU_COUNT}" -eq 5 ] 2>/dev/null; then
     log_success "Time-slicing active: ${GPU_COUNT} virtual GPUs per node"
 elif [ "${GPU_COUNT}" -eq 1 ] 2>/dev/null; then
     log_warn "GPU present but time-slicing not configured (allocatable: ${GPU_COUNT})"

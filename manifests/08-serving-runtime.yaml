@@ -6,7 +6,7 @@
 # documents the resulting live state for reference.
 #
 # T4-specific args added by deploy.sh patch:
-#   --gpu-memory-utilization 0.14   1/7 of VRAM so all 5 pods fit (see config.env)
+#   --gpu-memory-utilization 0.14   ~2.2 GB per pod so all 5 pods fit (see config.env)
 #   --max-model-len 1024            keeps KV cache small on 16GB shared GPU
 #   --no-enable-chunked-prefill     required for T4 (Triton kernel limit)
 #   --enforce-eager                 disables CUDA graph capture (avoids profiling OOM)

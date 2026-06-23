@@ -1,6 +1,6 @@
 # NVIDIA GPU Time-Slicing on RHOAI 3.4
 
-Demonstrates GPU time-slicing on OpenShift AI (RHOAI) 3.4 using a single NVIDIA T4 node. Time-slicing splits one physical GPU into 7 virtual GPUs. 5 of them are used — running 5 independent vLLM instances concurrently, each serving `google/gemma-3-270m`.
+Demonstrates GPU time-slicing on OpenShift AI (RHOAI) 3.4 using a single NVIDIA T4 node. Time-slicing splits one physical GPU into 5 virtual GPUs, running 5 independent vLLM instances concurrently, each serving `google/gemma-3-270m`.
 
 The project is visible in the RHOAI Dashboard, the inference endpoint is registered as a model server, and the model is available in the Gen AI Studio Playground.
 
@@ -10,10 +10,10 @@ The project is visible in the RHOAI Dashboard, the inference endpoint is registe
 Physical T4 GPU (16 GB VRAM)
          │
          │  NVIDIA time-slicing (GPU Operator ConfigMap)
-         │  migStrategy: none, replicas: 7
+         │  migStrategy: none, replicas: 5
          │
     ┌────┴─────────────────────────────────┐
-    │  7 × virtual nvidia.com/gpu          │
+    │  5 × virtual nvidia.com/gpu          │
     │  (kernel-level time-multiplexed)     │
     └────┬────┬────┬────┬────┬─────────────┘
          │    │    │    │    │
@@ -29,13 +29,13 @@ Physical T4 GPU (16 GB VRAM)
             OpenAI-compatible API
 ```
 
-Each pod requests `nvidia.com/gpu: 1` (one virtual slice). With 7 virtual GPUs per node, all 5 pods land on the same physical T4. 5 replicas are used instead of 7 — T4 memory pressure during simultaneous startup makes 7 unstable (see [Troubleshooting](#troubleshooting)).
+Each pod requests `nvidia.com/gpu: 1` (one virtual slice). With 5 virtual GPUs per node, all 5 pods land on the same physical T4, filling all available virtual GPU slots.
 
 Conservative vLLM settings are required for T4 (Turing, 64 KB shared memory per block):
 
 | Flag | Value | Reason |
 |---|---|---|
-| `--gpu-memory-utilization` | `0.14` | 1/7 VRAM budget per pod — fits 5+ pods on 16 GB |
+| `--gpu-memory-utilization` | `0.14` | ~2.2 GB per pod — fits 5 pods on 16 GB T4 |
 | `--max-model-len` | `1024` | Keeps KV cache allocation small |
 | `--no-enable-chunked-prefill` | — | Triton chunked-prefill kernel exceeds T4 shared memory |
 | `--enforce-eager` | — | Disables CUDA graph capture (avoids profiling OOM) |
@@ -149,7 +149,7 @@ rhoai-nvidia-timeslicing/
 ├── manifests/
 │   ├── 00-prerequisites-check.sh  # Pre-flight validation
 │   ├── 01-namespace.yaml          # Namespace: time-slicing (RHOAI-visible)
-│   ├── 02-time-slicing-config.yaml # GPU Operator ConfigMap (7 replicas/GPU)
+│   ├── 02-time-slicing-config.yaml # GPU Operator ConfigMap (5 replicas/GPU)
 │   ├── 03-minio.yaml              # MinIO S3 in rhoai-model-registries
 │   ├── 04-hf-secret.yaml.template # HuggingFace token secret (name: hf-token)
 │   ├── 05-s3-connection.yaml.template # MinIO connection (uri type, no managed label)
@@ -226,7 +226,7 @@ oc logs -n time-slicing -l llamastack.io/distribution=lsd-genai-playground
 ```bash
 oc get nodes -l nvidia.com/gpu.present=true \
   -o custom-columns='NAME:.metadata.name,GPU:.status.allocatable.nvidia\.com/gpu'
-# If GPU column shows "1" instead of "7", wait 60-90s for device plugin to restart
+# If GPU column shows "1" instead of "5", wait 60-90s for device plugin to restart
 oc rollout status daemonset/nvidia-device-plugin-daemonset -n nvidia-gpu-operator
 ```
 

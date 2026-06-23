@@ -2,7 +2,7 @@
 set -euo pipefail
 
 # =============================================================================
-# deploy.sh — Deploy 7× Gemma 270M on RHOAI 3.4 (GPU time-slicing)
+# deploy.sh — Deploy 5× Gemma 270M on RHOAI 3.4 (GPU time-slicing)
 #
 # Flow:
 #   0. Prerequisites check

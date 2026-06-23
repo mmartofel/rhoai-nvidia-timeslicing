@@ -4,14 +4,14 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this repo is
 
-Scripts and manifests for demonstrating NVIDIA GPU time-slicing on RHOAI 3.4 on the `zenek-hqxqx` OCP cluster (us-east-2). Time-slicing splits each physical T4 GPU into 7 virtual GPUs. 5 vLLM instances run concurrently (not 7 — see replica count rationale below). Each instance serves `google/gemma-3-270m` and is deployed as a KServe `InferenceService` replica.
+Scripts and manifests for demonstrating NVIDIA GPU time-slicing on RHOAI 3.4 on the `zenek-hqxqx` OCP cluster (us-east-2). Time-slicing splits each physical T4 GPU into 5 virtual GPUs. 5 vLLM instances run concurrently, one per virtual GPU. Each instance serves `google/gemma-3-270m` and is deployed as a KServe `InferenceService` replica.
 
 The deployment is fully integrated with RHOAI Dashboard: the `time-slicing` namespace appears as a project, the model server is visible in the project's Models view, and the model is available in Gen AI Studio Playground via `LlamaStackDistribution`.
 
 ## Cluster context
 
 - Cluster: `zenek-hqxqx`, region `us-east-2`
-- 4 GPU worker nodes (T4, time-sliced 7× each → `nvidia.com/gpu: 7` per node)
+- 4 GPU worker nodes (T4, time-sliced 5× each → `nvidia.com/gpu: 5` per node)
 - No non-GPU worker nodes; master nodes have `NoSchedule` taint
 - GPU nodes are CPU-constrained — keep CPU requests at `100m` per pod
 - **DAS operator removed 2026-06-22** — do not reinstall without coordinating; its `failurePolicy: Fail` webhook blocks all pod creation cluster-wide if the operator is deleted without removing the webhook first
@@ -41,17 +41,17 @@ cp config/config.env.example config/config.env
 
 ## Key design decisions
 
-**Time-slicing config**: The `time-slicing-config` ConfigMap (in `manifests/02-time-slicing-config.yaml`, applied to `nvidia-gpu-operator`) sets 7 virtual GPU replicas per physical GPU with `migStrategy: none`. Activated by patching `ClusterPolicy/gpu-cluster-policy` in `scripts/setup.sh`. Makes `nvidia.com/gpu: 7` allocatable on each node.
+**Time-slicing config**: The `time-slicing-config` ConfigMap (in `manifests/02-time-slicing-config.yaml`, applied to `nvidia-gpu-operator`) sets 5 virtual GPU replicas per physical GPU with `migStrategy: none`. Activated by patching `ClusterPolicy/gpu-cluster-policy` in `scripts/setup.sh`. Makes `nvidia.com/gpu: 5` allocatable on each node.
 
 **Why not MIG**: T4 GPUs do not support MIG hardware partitioning. MIG requires A100 or H100. Time-slicing with `migStrategy: none` is the correct approach for T4.
 
-**5 replicas, not 7**: With 7 pods starting simultaneously on one 16 GB physical GPU, pods race during memory profiling — one pod freeing memory looks like a "gain" to another pod's profiling assertion. `--num-gpu-blocks-override 200` bypasses profiling but 7 pods also hit hard memory pressure during model loading. 5 replicas is stable; 7 causes Init:CrashLoopBackOff storms at startup.
+**5 replicas**: Time-slicing is set to 5 virtual GPUs per physical GPU, and 5 InferenceService replicas fill all available slots. More than 5 pods starting simultaneously on one 16 GB T4 causes memory profiling races — one pod freeing memory looks like a "gain" to another pod's profiling assertion — and hard memory pressure during model loading. `--num-gpu-blocks-override 200` bypasses profiling but does not solve memory pressure; 5 is the stable limit.
 
 **GPU memory and vLLM T4 constraints**: T4 GPUs (Turing, compute capability 7.5) have a 64 KB shared memory limit per block. Several vLLM v1 defaults are incompatible with T4 and must be overridden in the ServingRuntime:
 
 | Flag | Value | Why |
 |---|---|---|
-| `--gpu-memory-utilization` | `0.14` | 1/7 of VRAM — fits 5+ pods on one 16 GB T4 |
+| `--gpu-memory-utilization` | `0.14` | ~2.2 GB per pod — fits 5 pods on one 16 GB T4 |
 | `--max-model-len` | `1024` | Limits KV cache allocation |
 | `--no-enable-chunked-prefill` | — | Chunked-prefill Triton kernel exceeds T4 64 KB shared mem |
 | `--enforce-eager` | — | Disables CUDA graph capture (avoids profiling OOM during startup) |

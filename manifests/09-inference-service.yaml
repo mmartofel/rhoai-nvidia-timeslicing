@@ -1,10 +1,10 @@
 # =============================================================================
-# InferenceService — Gemma 3 270M (7 replicas, time-sliced T4)
+# InferenceService — Gemma 3 270M (5 replicas, time-sliced T4)
 #
-# minReplicas: 7 / maxReplicas: 7 — pins exactly 7 pods, one per virtual GPU.
+# minReplicas: 5 / maxReplicas: 5 — pins exactly 5 pods, one per virtual GPU.
 # Each pod requests nvidia.com/gpu: "1" (one time-sliced virtual GPU).
-# With 7 virtual GPUs per node (from time-slicing-config), the scheduler
-# places all 7 pods on the same physical T4 node.
+# With 5 virtual GPUs per node (from time-slicing-config), the scheduler
+# places all 5 pods on the same physical T4 node.
 #
 # storageUri is set by the connection-isvc webhook (RHODS operator) when the
 # connection secret uses connection-type-protocol: uri and has a URI key.
@@ -32,7 +32,7 @@ metadata:
     networking.kserve.io/visibility: exposed
     app: gemma-270m
   annotations:
-    openshift.io/display-name: "Gemma 3 270M (7× time-sliced T4)"
+    openshift.io/display-name: "Gemma 3 270M (5× time-sliced T4)"
     security.opendatahub.io/enable-auth: "false"
     serving.kserve.io/stop: "false"
     opendatahub.io/connections: s3-data-connection

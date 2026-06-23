@@ -4,7 +4,7 @@ set -euo pipefail
 # =============================================================================
 # setup.sh — Configure NVIDIA GPU time-slicing on the GPU Operator
 #
-# Run this ONCE (or after GPU Operator updates) to enable 7 virtual GPUs
+# Run this ONCE (or after GPU Operator updates) to enable 5 virtual GPUs
 # per physical T4. Idempotent — safe to re-run.
 #
 # Prerequisites:
@@ -39,7 +39,7 @@ echo ""
 echo -e "${BOLD}╔══════════════════════════════════════════════════════════════╗${NC}"
 echo -e "${BOLD}║   NVIDIA GPU Time-Slicing Setup — RHOAI 3.4                  ║${NC}"
 echo -e "${BOLD}║   Cluster: zenek-hqxqx (us-east-2)                           ║${NC}"
-echo -e "${BOLD}║   Target:  7 virtual GPUs per physical T4 node               ║${NC}"
+echo -e "${BOLD}║   Target:  5 virtual GPUs per physical T4 node               ║${NC}"
 echo -e "${BOLD}╚══════════════════════════════════════════════════════════════╝${NC}"
 echo ""
 
@@ -73,7 +73,7 @@ log_success "GPU Operator and ClusterPolicy present"
 # =============================================================================
 # Step 2: Apply time-slicing ConfigMap
 # =============================================================================
-log_step "Step 2/4: Applying time-slicing ConfigMap (7 replicas per GPU)"
+log_step "Step 2/4: Applying time-slicing ConfigMap (5 replicas per GPU)"
 
 oc apply -f "${REPO_DIR}/manifests/02-time-slicing-config.yaml"
 log_success "time-slicing-config ConfigMap applied to nvidia-gpu-operator"
@@ -127,18 +127,18 @@ oc get nodes -l nvidia.com/gpu.present=true \
     -o custom-columns='NAME:.metadata.name,STATUS:.status.conditions[-1].type,GPU:.status.allocatable.nvidia\.com/gpu'
 echo ""
 
-# Check that at least one node shows 7 GPUs
+# Check that at least one node shows 5 GPUs
 GPU_COUNT=$(oc get nodes -l 'nvidia.com/gpu.present=true' \
     -o jsonpath='{.items[0].status.allocatable.nvidia\.com/gpu}' 2>/dev/null || echo "0")
 
-if [ "${GPU_COUNT}" = "7" ]; then
+if [ "${GPU_COUNT}" = "5" ]; then
     echo -e "${GREEN}${BOLD}"
     echo "  ✅ Time-slicing active: ${GPU_COUNT} virtual GPUs per node"
-    echo "     Each of the 7 pods in deploy.sh will claim 1 virtual GPU,"
+    echo "     Each of the 5 pods in deploy.sh will claim 1 virtual GPU,"
     echo "     sharing the same physical T4 via kernel-level time-slicing."
     echo -e "${NC}"
 elif [ "${GPU_COUNT}" -gt 1 ] 2>/dev/null; then
-    log_warn "Allocatable GPUs: ${GPU_COUNT} (expected 7). Nodes may still be updating."
+    log_warn "Allocatable GPUs: ${GPU_COUNT} (expected 5). Nodes may still be updating."
     echo "  → Wait 60s and re-check: oc get nodes -l nvidia.com/gpu.present=true -o custom-columns='NAME:.metadata.name,GPU:.status.allocatable.nvidia\.com/gpu'"
 else
     log_warn "Allocatable GPUs: '${GPU_COUNT}'. Time-slicing may not be active yet."

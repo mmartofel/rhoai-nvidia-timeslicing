@@ -16,4 +16,4 @@ metadata:
     kubernetes.io/metadata.name: time-slicing
   annotations:
     openshift.io/display-name: "GPU Time-Slicing Demo"
-    openshift.io/description: "7× Gemma-270M on a single NVIDIA T4 via GPU time-slicing"
+    openshift.io/description: "5 × Gemma-270M on a single NVIDIA T4 via GPU time-slicing"
