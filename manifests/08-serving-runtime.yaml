@@ -1,0 +1,70 @@
+# =============================================================================
+# ServingRuntime — vLLM for time-sliced T4
+#
+# Custom serving runtime using vllm/vllm-openai. Conservative memory settings
+# (--gpu-memory-utilization 0.10, --max-model-len 1024) allow 7 independent
+# vLLM instances to coexist on a single time-sliced T4 GPU without OOM.
+#
+# The storage-initializer init container (injected by KServe) downloads the
+# model from MinIO to /mnt/models before this container starts.
+# =============================================================================
+apiVersion: serving.kserve.io/v1alpha1
+kind: ServingRuntime
+metadata:
+  name: vllm-timeslicing-runtime
+  namespace: time-slicing
+  labels:
+    app: gemma-270m
+    opendatahub.io/dashboard: "true"
+  annotations:
+    openshift.io/display-name: "vLLM (time-sliced T4)"
+spec:
+  supportedModelFormats:
+    - name: vLLM
+      version: "1"
+      autoSelect: true
+  multiModel: false
+  containers:
+    - name: kserve-container
+      image: vllm/vllm-openai:latest
+      command:
+        - python
+        - -m
+        - vllm.entrypoints.openai.api_server
+      args:
+        - --model
+        - /mnt/models
+        - --served-model-name
+        - google/gemma-3-270m
+        - --gpu-memory-utilization
+        - "0.10"
+        - --max-model-len
+        - "1024"
+        - --host
+        - "0.0.0.0"
+        - --port
+        - "8080"
+      ports:
+        - name: h2c
+          containerPort: 8080
+          protocol: TCP
+      env:
+        - name: HOME
+          value: /tmp
+        - name: HF_HOME
+          value: /tmp
+        - name: TORCHINDUCTOR_CACHE_DIR
+          value: /tmp/torchinductor
+      readinessProbe:
+        httpGet:
+          path: /health
+          port: 8080
+        initialDelaySeconds: 30
+        periodSeconds: 10
+        failureThreshold: 12
+      resources:
+        requests:
+          cpu: "100m"
+          memory: "2Gi"
+        limits:
+          nvidia.com/gpu: "1"

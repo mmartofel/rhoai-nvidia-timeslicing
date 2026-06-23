@@ -1,0 +1,21 @@
+# =============================================================================
+# AcceleratorProfile — NVIDIA T4
+#
+# RHOAI Dashboard resource that defines the GPU profile used by model servers.
+# Must live in the redhat-ods-applications namespace (RHOAI Dashboard namespace).
+# =============================================================================
+apiVersion: dashboard.opendatahub.io/v1alpha1
+kind: AcceleratorProfile
+metadata:
+  name: nvidia-t4
+  namespace: redhat-ods-applications
+  labels:
+    app.kubernetes.io/part-of: rhoai
+spec:
+  displayName: "NVIDIA T4 (time-sliced)"
+  enabled: true
+  identifier: nvidia.com/gpu
+  tolerations:
+    - key: "nvidia.com/gpu"
+      operator: "Exists"
+      effect: "NoSchedule"

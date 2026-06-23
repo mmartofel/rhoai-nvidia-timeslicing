@@ -1,0 +1,41 @@
+# =============================================================================
+# .gitignore — NVIDIA GPU Time-Slicing on RHOAI
+# =============================================================================
+
+# config.env contains HF_TOKEN — never commit it
+config/config.env
+config/config.env.local
+config/*.secret.env
+
+# Generated secrets from envsubst (created at deploy time)
+manifests/*-rendered.yaml
+
+# Files with tokens / credentials
+*.token
+*.key
+*.pem
+*.p12
+*.secret
+
+# Kubeconfig
+kubeconfig
+.kubeconfig
+*.kubeconfig
+
+# Temp files
+*.bak
+*.tmp
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
+
+# Editors
+.vscode/
+.idea/
+*.iml

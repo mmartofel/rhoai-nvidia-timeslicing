@@ -1,0 +1,19 @@
+# =============================================================================
+# Namespace: time-slicing
+#
+# The opendatahub.io/dashboard: "true" label makes this namespace appear as
+# a project in the RHOAI Dashboard. modelmesh-enabled: "false" routes all
+# model serving traffic through KServe (not ModelMesh).
+# =============================================================================
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: time-slicing
+  labels:
+    opendatahub.io/dashboard: "true"
+    modelmesh-enabled: "false"
+    app.kubernetes.io/part-of: rhoai
+    kubernetes.io/metadata.name: time-slicing
+  annotations:
+    openshift.io/display-name: "GPU Time-Slicing Demo"
+    openshift.io/description: "7× Gemma-270M on a single NVIDIA T4 via GPU time-slicing"

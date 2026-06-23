@@ -1,0 +1,32 @@
+# =============================================================================
+# S3 data connection — RHOAI-native S3 connection secret for MinIO.
+#
+# Labelled as an opendatahub.io data connection so the RHOAI Dashboard shows
+# it in the project's Data Connections panel.
+#
+# This secret is also listed in s3-data-connection-sa (ServiceAccount) and
+# its key name matches the storage-config secret's key (s3-data-connection)
+# that KServe uses for the storage.key credential mechanism.
+# =============================================================================
+apiVersion: v1
+kind: Secret
+metadata:
+  name: s3-data-connection
+  namespace: ${NAMESPACE}
+  labels:
+    opendatahub.io/dashboard: "true"
+    opendatahub.io/managed: "true"
+    app: gemma-270m
+  annotations:
+    opendatahub.io/connection-type: s3
+    openshift.io/display-name: "MinIO (Gemma)"
+type: Opaque
+stringData:
+  AWS_ACCESS_KEY_ID: "${MINIO_ACCESS_KEY}"
+  AWS_SECRET_ACCESS_KEY: "${MINIO_SECRET_KEY}"
+  AWS_S3_ENDPOINT: "${MINIO_ENDPOINT}"
+  AWS_ENDPOINT_URL: "${MINIO_ENDPOINT}"
+  AWS_DEFAULT_REGION: "us-east-1"
+  AWS_S3_BUCKET: "${MINIO_BUCKET}"
+  S3_USE_HTTPS: "0"
+  S3_VERIFY_SSL: "0"

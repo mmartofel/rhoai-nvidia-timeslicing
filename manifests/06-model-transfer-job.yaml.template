@@ -1,0 +1,127 @@
+# =============================================================================
+# Model Transfer Job — one-time download from HuggingFace → MinIO
+#
+# Run ONCE before deploying InferenceService.
+# Idempotent: skips download if model already exists in MinIO.
+#
+# Flow:
+#   1. Check if google/gemma-3-270m already in MinIO
+#   2. If not: download from HuggingFace Hub (~540 MB)
+#   3. Upload to s3://<bucket>/gemma-3-270m/
+#
+# Credentials:
+#   - huggingface-token Secret → HF_TOKEN for gated model access
+#   - s3-data-connection Secret → AWS_* env vars for MinIO upload
+# =============================================================================
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: gemma-model-transfer
+  namespace: ${NAMESPACE}
+  labels:
+    app: gemma-270m
+    job-type: model-transfer
+spec:
+  backoffLimit: 0
+  ttlSecondsAfterFinished: 86400
+  template:
+    metadata:
+      labels:
+        app: gemma-270m
+        job-type: model-transfer
+    spec:
+      restartPolicy: Never
+      volumes:
+        - name: workspace
+          emptyDir:
+            sizeLimit: 5Gi
+      containers:
+        - name: transfer
+          image: python:3.11-slim
+          command: ["/bin/bash", "-c"]
+          args:
+            - |
+              set -euo pipefail
+
+              echo "============================================="
+              echo " Gemma Model Transfer Job"
+              echo " Source : hf://google/gemma-3-270m"
+              echo " Target : s3://${AWS_S3_BUCKET}/gemma-3-270m/"
+              echo " Storage: ${AWS_S3_ENDPOINT}"
+              echo "============================================="
+              echo ""
+
+              echo "[1/4] Installing tools (huggingface_hub, awscli)..."
+              pip install -q --no-cache-dir "huggingface_hub>=0.21.0" awscli
+              export PATH="/workspace/.local/bin:${PATH}"
+
+              echo "[2/4] Creating bucket (idempotent)..."
+              aws s3 mb "s3://${AWS_S3_BUCKET}" \
+                  --endpoint-url "${AWS_S3_ENDPOINT}" \
+                  --region "${AWS_DEFAULT_REGION}" \
+                  2>/dev/null || true
+
+              echo "[2/4] Checking if model already present in MinIO..."
+              if aws s3 ls "s3://${AWS_S3_BUCKET}/gemma-3-270m/config.json" \
+                  --endpoint-url "${AWS_S3_ENDPOINT}" \
+                  --region "${AWS_DEFAULT_REGION}" \
+                  2>/dev/null; then
+                  echo ""
+                  echo "Model already in MinIO — transfer skipped."
+                  echo "Delete s3://${AWS_S3_BUCKET}/gemma-3-270m/ to force re-download."
+                  exit 0
+              fi
+
+              echo "[3/4] Downloading from HuggingFace Hub..."
+              echo "      Token provided: $([ -n "${HF_TOKEN:-}" ] && echo YES || echo "NO — anonymous rate limits apply")"
+              python3 << 'PYEOF'
+              from huggingface_hub import snapshot_download
+              import os
+
+              model_id = "google/gemma-3-270m"
+              local_dir = "/workspace/model"
+              token = os.environ.get("HF_TOKEN") or None
+
+              print(f"Downloading {model_id}...")
+              if not token:
+                  print("WARNING: No HF_TOKEN set — Gemma is gated and requires authentication")
+
+              snapshot_download(
+                  repo_id=model_id,
+                  local_dir=local_dir,
+                  token=token,
+                  ignore_patterns=["*.msgpack", "*.h5", "flax_model*", "rust_model.ot"],
+              )
+              print("Download complete.")
+              PYEOF
+
+              echo "[4/4] Uploading to MinIO..."
+              aws s3 sync /workspace/model/ \
+                  "s3://${AWS_S3_BUCKET}/gemma-3-270m/" \
+                  --endpoint-url "${AWS_S3_ENDPOINT}" \
+                  --region "${AWS_DEFAULT_REGION}" \
+                  --no-progress
+
+              echo ""
+              echo "============================================="
+              echo " Transfer complete!"
+              echo " s3://${AWS_S3_BUCKET}/gemma-3-270m/"
+              echo "============================================="
+          env:
+            - name: HOME
+              value: /workspace
+          envFrom:
+            - secretRef:
+                name: huggingface-token
+            - secretRef:
+                name: s3-data-connection
+          volumeMounts:
+            - name: workspace
+              mountPath: /workspace
+          resources:
+            requests:
+              cpu: "1"
+              memory: "2Gi"
+            limits:
+              cpu: "2"
+              memory: "4Gi"

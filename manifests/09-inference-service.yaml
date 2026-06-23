@@ -1,0 +1,54 @@
+# =============================================================================
+# InferenceService — Gemma 3 270M (7 replicas, time-sliced T4)
+#
+# minReplicas: 7 / maxReplicas: 7 — pins exactly 7 pods, one per virtual GPU.
+# Each pod requests nvidia.com/gpu: "1" (one time-sliced virtual GPU).
+# With 7 virtual GPUs per node (from time-slicing-config), the scheduler
+# places all 7 pods on the same physical T4 node.
+#
+# S3 credentials use storage.key → storage-config secret (JSON blob).
+# KServe injects STORAGE_CONFIG env var into the storage-initializer.
+# This avoids the CredentialBuilder path (SA annotation → secretKeyRef env
+# vars) that conflicts with the ODH pod webhook under reinvocationPolicy:
+# IfNeeded and causes the env[2] value+valueFrom admission error.
+#
+# The label opendatahub.io/dashboard: "true" makes this InferenceService
+# visible in the RHOAI Dashboard under the time-slicing project.
+# =============================================================================
+apiVersion: serving.kserve.io/v1beta1
+kind: InferenceService
+metadata:
+  name: gemma-270m
+  namespace: time-slicing
+  labels:
+    opendatahub.io/dashboard: "true"
+    opendatahub.io/genai-asset: "true"
+    networking.kserve.io/visibility: exposed
+    app: gemma-270m
+  annotations:
+    openshift.io/display-name: "Gemma 3 270M (7× time-sliced T4)"
+    security.opendatahub.io/enable-auth: "false"
+    serving.kserve.io/stop: "false"
+    opendatahub.io/connections: s3-data-connection
+    opendatahub.io/connection-path: gemma-3-270m
+spec:
+  predictor:
+    minReplicas: 7
+    maxReplicas: 7
+    serviceAccountName: s3-data-connection-sa
+    model:
+      modelFormat:
+        name: vLLM
+      runtime: vllm-cuda-runtime
+      storage:
+        key: s3-data-connection
+        path: gemma-3-270m
+      resources:
+        requests:
+          cpu: "100m"
+          memory: "4Gi"
+          nvidia.com/gpu: "1"
+        limits:
+          cpu: "2"
+          memory: "8Gi"
+          nvidia.com/gpu: "1"

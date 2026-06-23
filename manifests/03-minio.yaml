@@ -1,0 +1,140 @@
+# =============================================================================
+# MinIO — cluster-local S3-compatible model storage
+#
+# Namespace: rhoai-model-registries (shared, not tied to one project)
+# Accessible from any namespace via:
+#   http://minio.rhoai-model-registries.svc.cluster.local:9000
+#
+# Credentials: minio / minio123  (demo only — change for production)
+# Console:     http://minio.rhoai-model-registries.svc.cluster.local:9001
+# =============================================================================
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: rhoai-model-registries
+  labels:
+    app.kubernetes.io/part-of: rhoai
+    kubernetes.io/metadata.name: rhoai-model-registries
+  annotations:
+    openshift.io/display-name: "RHOAI Model Registries"
+    openshift.io/description: "Shared storage for RHOAI model registry artifacts (MinIO S3)"
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: minio-root-credentials
+  namespace: rhoai-model-registries
+  labels:
+    app: minio
+stringData:
+  MINIO_ROOT_USER: "minio"
+  MINIO_ROOT_PASSWORD: "minio123"
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: minio-data
+  namespace: rhoai-model-registries
+  labels:
+    app: minio
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 10Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: minio
+  namespace: rhoai-model-registries
+  labels:
+    app: minio
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: minio
+  template:
+    metadata:
+      labels:
+        app: minio
+    spec:
+      containers:
+        - name: minio
+          image: quay.io/minio/minio:latest
+          command: ["minio", "server", "/data", "--console-address", ":9001"]
+          ports:
+            - containerPort: 9000
+              name: s3
+            - containerPort: 9001
+              name: console
+          envFrom:
+            - secretRef:
+                name: minio-root-credentials
+          volumeMounts:
+            - name: data
+              mountPath: /data
+          readinessProbe:
+            httpGet:
+              path: /minio/health/ready
+              port: 9000
+            initialDelaySeconds: 10
+            periodSeconds: 5
+            failureThreshold: 6
+          livenessProbe:
+            httpGet:
+              path: /minio/health/live
+              port: 9000
+            initialDelaySeconds: 30
+            periodSeconds: 20
+          resources:
+            requests:
+              cpu: "250m"
+              memory: "512Mi"
+            limits:
+              cpu: "2"
+              memory: "4Gi"
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: minio-data
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: minio
+  namespace: rhoai-model-registries
+  labels:
+    app: minio
+spec:
+  selector:
+    app: minio
+  ports:
+    - name: s3
+      port: 9000
+      targetPort: 9000
+    - name: console
+      port: 9001
+      targetPort: 9001
+---
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: minio-console
+  namespace: rhoai-model-registries
+  labels:
+    app: minio
+  annotations:
+    openshift.io/display-name: "MinIO Console"
+spec:
+  to:
+    kind: Service
+    name: minio
+  port:
+    targetPort: console
+  tls:
+    termination: edge
+    insecureEdgeTerminationPolicy: Redirect

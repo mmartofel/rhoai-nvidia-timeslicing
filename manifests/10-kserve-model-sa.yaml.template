@@ -1,0 +1,39 @@
+# =============================================================================
+# S3 storage access — storage-config secret + ServiceAccount
+#
+# storage-config is the KServe-native credential mechanism (storageSpecSecretName
+# in inferenceservice-config). KServe reads the key matching storage.key from
+# the IS spec and injects its JSON value as STORAGE_CONFIG env var into the
+# storage-initializer. This avoids the CredentialBuilder path that causes the
+# env[2] value+valueFrom conflict under reinvocationPolicy: IfNeeded.
+#
+# s3-data-connection-sa is the ServiceAccount referenced by the IS predictor.
+# Its secrets list ties it to s3-data-connection for RHOAI Dashboard wiring.
+# =============================================================================
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: storage-config
+  namespace: ${NAMESPACE}
+  labels:
+    opendatahub.io/managed: "true"
+type: Opaque
+stringData:
+  s3-data-connection: |
+    {
+      "type": "s3",
+      "access_key_id": "${MINIO_ACCESS_KEY}",
+      "secret_access_key": "${MINIO_SECRET_KEY}",
+      "bucket": "${MINIO_BUCKET}",
+      "endpoint_url": "${MINIO_ENDPOINT}",
+      "region": "us-east-1"
+    }
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: s3-data-connection-sa
+  namespace: ${NAMESPACE}
+secrets:
+  - name: s3-data-connection
