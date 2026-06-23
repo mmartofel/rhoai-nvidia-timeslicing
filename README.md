@@ -42,39 +42,6 @@ Each pod requests `nvidia.com/gpu: 1` (one virtual slice). With 7 virtual GPUs p
 | CLI tools | `oc`, `envsubst` (brew install gettext on macOS), `curl` |
 | HuggingFace token | Required — Gemma is a gated model (accept terms at huggingface.co/google/gemma-3-270m) |
 
-## Repository structure
-
-```
-rhoai-nvidia-timeslicing/
-├── README.md
-├── CLAUDE.md
-├── .gitignore
-├── config/
-│   ├── config.env.example         # Template — version-controlled
-│   └── config.env                 # Your config with HF_TOKEN — gitignored
-├── manifests/
-│   ├── 00-prerequisites-check.sh  # Pre-flight validation
-│   ├── 01-namespace.yaml          # Namespace: time-slicing (RHOAI-visible)
-│   ├── 02-time-slicing-config.yaml # GPU Operator ConfigMap (7 replicas/GPU)
-│   ├── 03-minio.yaml              # MinIO S3 in rhoai-model-registries
-│   ├── 04-hf-secret.yaml.template # HuggingFace token secret
-│   ├── 05-s3-connection.yaml.template # S3 credentials for model loading
-│   ├── 06-model-transfer-job.yaml.template # Job: HF → MinIO transfer
-│   ├── 07-accelerator-profile.yaml # NVIDIA T4 AcceleratorProfile
-│   ├── 08-serving-runtime.yaml    # (unused) Custom vLLM ServingRuntime
-│   ├── 09-inference-service.yaml  # KServe InferenceService (7 replicas)
-│   ├── 10-kserve-model-sa.yaml.template # storage-config Secret + SA for KServe
-│   ├── 11-playground.yaml.template # LlamaStackDistribution (Playground UI)
-│   └── 12-test-inference.sh       # Inference smoke test
-├── scripts/
-│   ├── deploy.sh                  # Deploy Gemma + Playground (9 steps)
-│   ├── status.sh                  # Show IS status, pods, GPU usage, events
-│   ├── port-forward.sh            # localhost:8080 → gemma-270m service
-│   └── undeploy.sh                # Remove deployment (optionally delete namespace)
-├── setup.sh                       # Configure GPU time-slicing (run once)
-└── deploy.sh                      # Backward-compat wrapper → scripts/deploy.sh
-```
-
 ## Quick start
 
 ```bash
@@ -87,7 +54,7 @@ cp config/config.env.example config/config.env
 # Edit config/config.env and fill in HF_TOKEN
 
 # 3. Configure GPU time-slicing (run once, or after GPU Operator updates)
-./setup.sh
+./scripts/setup.sh
 
 # 4. Deploy Gemma and the Playground
 ./scripts/deploy.sh
@@ -95,7 +62,7 @@ cp config/config.env.example config/config.env
 
 ## RHOAI Dashboard
 
-After `deploy.sh` completes:
+After `./scripts/deploy.sh` completes:
 
 | Dashboard Location | What you see |
 |---|---|
@@ -163,12 +130,44 @@ curl -k ${ENDPOINT}/v1/chat/completions \
   }'
 ```
 
+## Repository structure
+
+```
+rhoai-nvidia-timeslicing/
+├── README.md
+├── CLAUDE.md
+├── .gitignore
+├── config/
+│   ├── config.env.example         # Template — version-controlled
+│   └── config.env                 # Your config with HF_TOKEN — gitignored
+├── manifests/
+│   ├── 00-prerequisites-check.sh  # Pre-flight validation
+│   ├── 01-namespace.yaml          # Namespace: time-slicing (RHOAI-visible)
+│   ├── 02-time-slicing-config.yaml # GPU Operator ConfigMap (7 replicas/GPU)
+│   ├── 03-minio.yaml              # MinIO S3 in rhoai-model-registries
+│   ├── 04-hf-secret.yaml.template # HuggingFace token secret
+│   ├── 05-s3-connection.yaml.template # S3 credentials for model loading
+│   ├── 06-model-transfer-job.yaml.template # Job: HF → MinIO transfer
+│   ├── 07-accelerator-profile.yaml # NVIDIA T4 AcceleratorProfile
+│   ├── 08-serving-runtime.yaml    # (unused) Custom vLLM ServingRuntime
+│   ├── 09-inference-service.yaml  # KServe InferenceService (7 replicas)
+│   ├── 10-kserve-model-sa.yaml.template # storage-config Secret + SA for KServe
+│   ├── 11-playground.yaml.template # LlamaStackDistribution (Playground UI)
+│   └── 12-test-inference.sh       # Inference smoke test
+└── scripts/
+    ├── setup.sh                   # Configure GPU time-slicing (run once)
+    ├── deploy.sh                  # Deploy Gemma + Playground (9 steps)
+    ├── status.sh                  # Show IS status, pods, GPU usage, events
+    ├── port-forward.sh            # localhost:8080 → gemma-270m service
+    └── undeploy.sh                # Remove deployment (optionally delete namespace)
+```
+
 ## Troubleshooting
 
 **Pods stuck in Pending:**
 ```bash
 oc describe pod -n time-slicing -l serving.kserve.io/inferenceservice=gemma-270m | grep -A10 Events
-# Common cause: time-slicing not active (run setup.sh first) or CPU resource pressure
+# Common cause: time-slicing not active (run scripts/setup.sh first) or CPU resource pressure
 ```
 
 **InferenceService stuck in NotReady:**
@@ -191,11 +190,10 @@ oc logs -n time-slicing -l llamastack.io/distribution=lsd-genai-playground
 # The llama-stack server must be able to reach the InferenceService endpoint
 ```
 
-**GPU time-slicing not active after setup.sh:**
+**GPU time-slicing not active after scripts/setup.sh:**
 ```bash
 oc get nodes -l nvidia.com/gpu.present=true \
   -o custom-columns='NAME:.metadata.name,GPU:.status.allocatable.nvidia\.com/gpu'
 # If GPU column shows "1" instead of "7", wait 60-90s for device plugin to restart
 oc rollout status daemonset/nvidia-device-plugin-daemonset -n nvidia-gpu-operator
 ```
-# rhoai-nvidia-timeslicing

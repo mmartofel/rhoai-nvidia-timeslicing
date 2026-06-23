@@ -11,10 +11,11 @@ set -euo pipefail
 #   - oc CLI logged in to zenek-hqxqx cluster
 #   - NVIDIA GPU Operator installed in nvidia-gpu-operator namespace
 #
-# After setup.sh succeeds, run deploy.sh to deploy the Gemma model.
+# After setup.sh succeeds, run scripts/deploy.sh to deploy the Gemma model.
 # =============================================================================
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -74,7 +75,7 @@ log_success "GPU Operator and ClusterPolicy present"
 # =============================================================================
 log_step "Step 2/4: Applying time-slicing ConfigMap (7 replicas per GPU)"
 
-oc apply -f "${SCRIPT_DIR}/manifests/02-time-slicing-config.yaml"
+oc apply -f "${REPO_DIR}/manifests/02-time-slicing-config.yaml"
 log_success "time-slicing-config ConfigMap applied to nvidia-gpu-operator"
 
 # =============================================================================
@@ -106,7 +107,7 @@ if ! oc rollout status daemonset/nvidia-device-plugin-daemonset \
     --timeout=180s 2>/dev/null; then
     log_warn "Device plugin DaemonSet rollout timeout — checking status manually..."
     oc get daemonset nvidia-device-plugin-daemonset -n nvidia-gpu-operator 2>/dev/null || true
-    log_warn "Continuing — nodes may still be updating. Re-run setup.sh to verify."
+    log_warn "Continuing — nodes may still be updating. Re-run scripts/setup.sh to verify."
 else
     log_success "nvidia-device-plugin-daemonset rollout complete"
 fi
@@ -152,6 +153,6 @@ echo -e "${BOLD}║  Setup complete. Next step:                                 
 echo -e "${BOLD}║                                                              ║${NC}"
 echo -e "${BOLD}║    export HF_TOKEN=hf_xxxxxxxxxxxx                           ║${NC}"
 echo -e "${BOLD}║    # (or set it in config/config.env)                        ║${NC}"
-echo -e "${BOLD}║    ./deploy.sh                                               ║${NC}"
+echo -e "${BOLD}║    ./scripts/deploy.sh                                       ║${NC}"
 echo -e "${BOLD}╚══════════════════════════════════════════════════════════════╝${NC}"
 echo ""

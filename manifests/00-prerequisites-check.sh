@@ -105,9 +105,9 @@ if [ "${GPU_COUNT}" -eq 7 ] 2>/dev/null; then
     log_success "Time-slicing active: ${GPU_COUNT} virtual GPUs per node"
 elif [ "${GPU_COUNT}" -eq 1 ] 2>/dev/null; then
     log_warn "GPU present but time-slicing not configured (allocatable: ${GPU_COUNT})"
-    echo "  → Run setup.sh first to enable time-slicing"
+    echo "  → Run scripts/setup.sh first to enable time-slicing"
 else
-    log_warn "GPU allocatable: '${GPU_COUNT}' — run setup.sh to verify time-slicing"
+    log_warn "GPU allocatable: '${GPU_COUNT}' — run scripts/setup.sh to verify time-slicing"
 fi
 
 # --- 7. GPU Operator ---

@@ -29,7 +29,7 @@ The deployment is fully integrated with RHOAI Dashboard: the `time-slicing` name
 cp config/config.env.example config/config.env
 # Edit config/config.env: set HF_TOKEN
 
-./setup.sh              # Configure GPU time-slicing on the GPU Operator (run once)
+./scripts/setup.sh      # Configure GPU time-slicing on the GPU Operator (run once)
 ./scripts/deploy.sh     # Deploy MinIO, model transfer, InferenceService, Playground
 
 ./scripts/status.sh     # Check IS status, pods, GPU usage, warning events
@@ -41,7 +41,7 @@ cp config/config.env.example config/config.env
 
 ## Key design decisions
 
-**Time-slicing config**: The `time-slicing-config` ConfigMap (in `manifests/02-time-slicing-config.yaml`, applied to `nvidia-gpu-operator`) sets 7 virtual GPU replicas per physical GPU with `migStrategy: none`. Activated by patching `ClusterPolicy/gpu-cluster-policy` in `setup.sh`. Makes `nvidia.com/gpu: 7` allocatable on each node.
+**Time-slicing config**: The `time-slicing-config` ConfigMap (in `manifests/02-time-slicing-config.yaml`, applied to `nvidia-gpu-operator`) sets 7 virtual GPU replicas per physical GPU with `migStrategy: none`. Activated by patching `ClusterPolicy/gpu-cluster-policy` in `scripts/setup.sh`. Makes `nvidia.com/gpu: 7` allocatable on each node.
 
 **Why not MIG**: T4 GPUs do not support MIG hardware partitioning. MIG requires A100 or H100. Time-slicing with `migStrategy: none` is the correct approach for T4.
 
@@ -66,10 +66,11 @@ cp config/config.env.example config/config.env
 
 ## Scripts
 
-`scripts/` contains all operational scripts. Each sources `config/config.env` via `REPO_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"`. The root `deploy.sh` is a backward-compat wrapper that `exec`s `scripts/deploy.sh`.
+`scripts/` contains all operational scripts. Each sources `config/config.env` via `REPO_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"`.
 
 | Script | Purpose |
 |---|---|
+| `scripts/setup.sh` | Configure GPU time-slicing on the GPU Operator (run once) |
 | `scripts/deploy.sh` | Full 9-step deployment |
 | `scripts/status.sh [--watch]` | IS status, pods, nvidia-smi per pod, warning events |
 | `scripts/port-forward.sh [PORT]` | Port-forward to localhost (default 8080) |
